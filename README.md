@@ -65,8 +65,8 @@ Once created, open `.env` in your code editor. You are required to set the follo
 | `TWILIO_ACCOUNT_SID` | Your Twilio Account SID, which can be found in the Twilio Console. | `ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX` |
 | `TWILIO_AUTH_TOKEN`  | Your Twilio Auth Token, which is also found in the Twilio Console.  | `your_auth_token_here`  |
 | `TWILIO_CALLER_NUMBER`   | The additional Twilio phone number you purchased, **not** connected to Flex. Used for the caller-facing "leg" of the call. | `+18331234567` |
-| `TWILIO_FLEX_NUMBER`   | The phone number automatically purchased when provisioning your Flex account. Used for the agent-facing "leg" of the call. | `+14151234567` |
-| `TWILIO_FLEX_WORKFLOW_SID` | The Taskrouter Workflow SID, which is automatically provisioned with your Flex account. Used to enqueue inbound call with Flex agents. To find this, in the Twilio Console go to TaskRouter > Workspaces > Flex Task Assignment > Workflows  |`WWXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX`|
+| `TWILIO_AGENT_NUMBER`   | The agent-facing "leg" of the call. With `SKIP_FLEX=true`, any ordinary phone the human agent answers; in Flex mode, the number automatically purchased when provisioning your Flex account. | `+14151234567` |
+| `TWILIO_FLEX_WORKFLOW_SID` | Optional, Flex mode only. The Taskrouter Workflow SID, which is automatically provisioned with your Flex account. Used to enqueue inbound call with Flex agents. To find this, in the Twilio Console go to TaskRouter > Workspaces > Flex Task Assignment > Workflows  |`WWXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX`|
 | `OPENAI_API_KEY`              | Your OpenAI API Key             | `your_api_key_here`                 |
 
 Below are optional environment variables that have default values that can be overridden:
@@ -74,7 +74,7 @@ Below are optional environment variables that have default values that can be ov
 |-------------------|--------------------------------------------------|------------------------|
 | `FORWARD_AUDIO_BEFORE_TRANSLATION` | Set to `true` to enable forwarding the original spoken audio between callers. For instance, if Caller is speaking Spanish, this would play the original Spanish audio for the Agent before the translated audio is played. This setting is useful in production contexts to minimize perceived silences. Not recommended for development mode where one person will be simultaneously playing the role of the caller and the agent.     | `false`                 |
 | `API_PORT`        | The port your local server runs on.             | `5050`                 |
-| `SKIP_FLEX`       | Test mode without Flex. Set to `true` and put any phone you can answer in `TWILIO_FLEX_NUMBER`; translation starts as soon as that phone answers instead of waiting for a Flex agent to accept the task. Never enable in production. | `false` |
+| `SKIP_FLEX`       | Plain-phone mode without Flex. Set to `true` and `TWILIO_AGENT_NUMBER` can be any ordinary phone; translation starts as soon as that phone answers instead of waiting for a Flex agent to accept the task. | `false` |
 
 ### Twilio setup
 
@@ -101,7 +101,7 @@ In your Phone Number configuration settings, update the first **A call comes in*
 ![Point Caller Phone Number to Studio Flow](/live-translation-readme-images/inbound-voice-number-webhook.png)
 
 #### Point Agent Phone Number and TaskRouter Workspace to Middleware
-The last step is to point the agent-facing phone number (`TWILIO_FLEX_NUMBER`) and the TaskRouter "Flex Task Assignment" Workspace to this middleware app. This is needed to connect the conversation to a contact center agent in Flex.
+(Flex mode only - skip this step when `SKIP_FLEX=true`.) The last step is to point the agent-facing phone number (`TWILIO_AGENT_NUMBER`) and the TaskRouter "Flex Task Assignment" Workspace to this middleware app. This is needed to connect the conversation to a contact center agent in Flex.
 
 In the Twilio Console, go to **Phone Numbers** > **Manage** > **Active Numbers** and click on Flex phone number that was auto-provisioned. In your Phone Number configuration settings, update the first **A call comes in** dropdown to **Webhook** and set the URL to `https://[your-ngrok-subdomain].ngrok.app/outbound-call`, ensure **HTTP** is set to **HTTP POST**, and click **Save configuration**.
 ![Point Agent Phone Number to Middleware]/live-translation-readme-images(/flex-voice-number-webhook.png)
@@ -126,7 +126,7 @@ With the development server running, you may now begin to test the translation a
 
 To answer the call as the agent, you'll need log into the Flex Agent Desktop. The easiest way to do this is go to the [Flex Overview](https://console.twilio.com/us1/develop/flex/overview) page and click **Log in with Console**. Once the Agent Desktop is loaded, be sure that your Agent status is set to **Available** by toggling the dropdown in top-right corner of the window. This ensures enqueued tasks will be routed to you.
 
-With your mobile phone, dial the `TWILIO_CALLER_NUMBER` and make a call (Do **not** dial the `TWILIO_FLEX_NUMBER`). You should hear a prompt to select your desired language, and then be connected to Flex. On the Flex Agent Desktop, once a language preference is selected, you should see the call appear as assigned to you. Use Flex to answer the call.
+With your mobile phone, dial the `TWILIO_CALLER_NUMBER` and make a call (Do **not** dial the `TWILIO_AGENT_NUMBER`). You should hear a prompt to select your desired language, and then be connected to Flex. On the Flex Agent Desktop, once a language preference is selected, you should see the call appear as assigned to you. Use Flex to answer the call.
 
 Once connected, you should now be able to speak on one end of the call, and hear the OpenAI translated audio delivered to the other end of the call (and vice-versa). By default, the Agent's language is set to English. The Realtime API will translate audio from the chosen caller language to English, and the agent's English speech to the chosen caller language.
 

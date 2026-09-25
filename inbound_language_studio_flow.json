@@ -237,7 +237,7 @@
           "y": 1190
         },
         "method": "POST",
-        "url": "https://[your-ngrok-domain].ngrok.app/incoming-call?lang={{flow.variables.caller_language}}",
+        "url": "https://glowing-outrank-tactics.ngrok-free.dev/incoming-call?lang={{flow.variables.caller_language}}",
         "timeout": "14400"
       }
     },

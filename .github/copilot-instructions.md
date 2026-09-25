@@ -34,8 +34,8 @@ cp .env.sample .env
 | `TWILIO_ACCOUNT_SID` | [Console](https://console.twilio.com) homepage | Starts with `AC` |
 | `TWILIO_AUTH_TOKEN` | Console homepage → click to reveal | 32-char string. Treat as a password. |
 | `TWILIO_CALLER_NUMBER` | Console → Phone Numbers → Manage — the number **not** connected to Flex | E.164 format: `+15551234567` |
-| `TWILIO_FLEX_NUMBER` | Console → Phone Numbers → Manage — the number auto-provisioned with your Flex account | E.164 format: `+15551234567` |
-| `TWILIO_FLEX_WORKFLOW_SID` | Console → TaskRouter → Workspaces → Flex Task Assignment → Workflows | Starts with `WW` |
+| `TWILIO_AGENT_NUMBER` | The human agent's phone. With `SKIP_FLEX=true` any ordinary phone number; in Flex mode, the number auto-provisioned with your Flex account | E.164 format: `+15551234567` |
+| `TWILIO_FLEX_WORKFLOW_SID` | Optional, Flex mode only. Console → TaskRouter → Workspaces → Flex Task Assignment → Workflows | Starts with `WW` |
 | `OPENAI_API_KEY` | [OpenAI API Keys](https://platform.openai.com/api-keys) | Starts with `sk-` |
 | `NGROK_DOMAIN` | The Forwarding URL from `ngrok http 5050` — hostname only, no `https://` | `abc123.ngrok.app` |
 | `API_PORT` | Optional. Port the local server listens on. | Default: `5050` |
@@ -54,13 +54,13 @@ cp .env.sample .env
 
 **Always:**
 - Confirm `.env` is fully populated and ngrok is running before starting the server
-- Walk the user through all three Twilio setup steps in order: (1) import Studio Flow, (2) point `TWILIO_CALLER_NUMBER` to the Studio Flow, (3) point `TWILIO_FLEX_NUMBER` and TaskRouter workspace to the middleware
+- Walk the user through all three Twilio setup steps in order: (1) import Studio Flow, (2) point `TWILIO_CALLER_NUMBER` to the Studio Flow, (3) Flex mode only: point `TWILIO_AGENT_NUMBER` and TaskRouter workspace to the middleware (skip with `SKIP_FLEX=true`)
 - Remind the user that `NGROK_DOMAIN` must be updated every time a new ngrok session is started, and all three webhook URLs in Twilio Console must be updated to match
 - Confirm the Flex Agent Desktop is open and agent status is set to **Available** before the user places a test call
 
 **Never:**
 - Run the app before the Twilio Console configuration is complete — the call flow will silently fail
-- Use `TWILIO_FLEX_NUMBER` as the number to call when testing — calls must go to `TWILIO_CALLER_NUMBER`
+- Use `TWILIO_AGENT_NUMBER` as the number to call when testing — calls must go to `TWILIO_CALLER_NUMBER`
 - Hardcode credentials or phone numbers in source files
 
 ## Verify It's Working

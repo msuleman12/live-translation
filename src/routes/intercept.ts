@@ -48,7 +48,7 @@ const interceptWS: FastifyPluginAsyncTypebox = async (server) => {
           logger.info('Connecting to Agent');
           await twilio.calls.create({
             from: server.config.TWILIO_CALLER_NUMBER,
-            to: server.config.TWILIO_FLEX_NUMBER,
+            to: server.config.TWILIO_AGENT_NUMBER,
             callerId: customParameters.from,
             twiml: `
               <Response>
@@ -84,7 +84,7 @@ const interceptWS: FastifyPluginAsyncTypebox = async (server) => {
           );
           interceptor.agentSocket = ss;
 
-          // Test mode: TWILIO_FLEX_NUMBER is a plain phone, so no TaskRouter
+          // Plain-phone mode: TWILIO_AGENT_NUMBER is an ordinary phone, so no TaskRouter
           // reservation will arrive to start translation - start it now.
           if (server.config.SKIP_FLEX === 'true') {
             logger.info('SKIP_FLEX is enabled - starting translation without Flex');
