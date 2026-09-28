@@ -1,9 +1,12 @@
-import { FastifyBaseLogger, FastifyPluginAsync } from 'fastify';
-import { Type } from '@fastify/type-provider-typebox';
+import { FastifyBaseLogger } from 'fastify';
+import {
+  FastifyPluginAsyncTypebox,
+  Type,
+} from '@fastify/type-provider-typebox';
 
 import AudioInterceptor from '@/services/AudioInterceptor';
 
-const flexReservationAccepted: FastifyPluginAsync = async (server) => {
+const flexReservationAccepted: FastifyPluginAsyncTypebox = async (server) => {
   server.post(
     '/reservation-accepted',
     {

@@ -6,6 +6,7 @@ import incomingCall from './incoming-call';
 import outboundCall from './outbound-call';
 import interceptWS from './intercept';
 import flexReservationAccepted from './flex-reservation-accepted';
+import agentAnswered from './agent-answered';
 
 export default async function routes(server: FastifyInstance) {
   server.register(livenessProbe);
@@ -14,4 +15,5 @@ export default async function routes(server: FastifyInstance) {
   server.register(outboundCall);
   server.register(interceptWS);
   server.register(flexReservationAccepted);
+  server.register(agentAnswered);
 }

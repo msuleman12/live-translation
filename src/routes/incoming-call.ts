@@ -1,8 +1,11 @@
-import { Type } from '@fastify/type-provider-typebox';
-import { FastifyBaseLogger, FastifyPluginAsync } from 'fastify';
+import {
+  FastifyPluginAsyncTypebox,
+  Type,
+} from '@fastify/type-provider-typebox';
+import { FastifyBaseLogger } from 'fastify';
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse';
 
-const incomingCall: FastifyPluginAsync = async (server) => {
+const incomingCall: FastifyPluginAsyncTypebox = async (server) => {
   server.post(
     '/incoming-call',
     {
@@ -12,6 +15,10 @@ const incomingCall: FastifyPluginAsync = async (server) => {
           From: Type.String(),
           To: Type.String(),
           CallSid: Type.String(),
+        }),
+        // Set by the Studio Flow redirect: /incoming-call?lang=<language>
+        querystring: Type.Object({
+          lang: Type.Optional(Type.String()),
         }),
       },
     },

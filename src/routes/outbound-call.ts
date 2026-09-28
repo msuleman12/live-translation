@@ -1,11 +1,20 @@
-import { FastifyBaseLogger, FastifyPluginAsync } from 'fastify';
+import {
+  FastifyPluginAsyncTypebox,
+  Type,
+} from '@fastify/type-provider-typebox';
+import { FastifyBaseLogger } from 'fastify';
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse';
 
-const outboundCall: FastifyPluginAsync = async (server) => {
+const outboundCall: FastifyPluginAsyncTypebox = async (server) => {
   server.post(
     '/outbound-call',
     {
       logLevel: 'info',
+      schema: {
+        body: Type.Object({
+          Caller: Type.String(),
+        }),
+      },
     },
     async (req, reply) => {
       const logger = req.diScope.resolve<FastifyBaseLogger>('logger');

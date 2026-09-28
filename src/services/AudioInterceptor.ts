@@ -23,6 +23,7 @@ type OpenAIMessage = {
   vad_speech_stopped_time: number;
   type: string;
   delta: string;
+  transcript?: string;
 };
 
 export default class AudioInterceptor {
@@ -32,7 +33,7 @@ export default class AudioInterceptor {
 
   private config: Config;
 
-  private readonly callerLanguage?: string;
+  private readonly callerLanguage: string;
 
   #callerSocket?: StreamSocket;
 
@@ -48,6 +49,8 @@ export default class AudioInterceptor {
 
   #agentMessages?: BufferedMessage[];
 
+  #closed = false;
+
   public constructor(options: AudioInterceptorOptions) {
     this.logger = options.logger;
     this.config = options.config;
@@ -59,13 +62,14 @@ export default class AudioInterceptor {
    * Closes the audio interceptor
    */
   public close() {
+    this.#closed = true;
     if (this.#callerSocket) {
       this.#callerSocket.close();
-      this.#callerSocket = null;
+      this.#callerSocket = undefined;
     }
     if (this.#agentSocket) {
       this.#agentSocket.close();
-      this.#agentSocket = null;
+      this.#agentSocket = undefined;
     }
     if (this.#callerOpenAISocket) {
       this.#callerOpenAISocket.close();
@@ -106,7 +110,7 @@ export default class AudioInterceptor {
 
   private translateAndForwardAgentAudio(message: MediaBaseAudioMessage) {
     if (this.config.FORWARD_AUDIO_BEFORE_TRANSLATION === 'true') {
-      this.#callerSocket.send([message.media.payload]);
+      this.#callerSocket?.send([message.media.payload]);
     }
     // Wait for 1 second after the first time we hear audio from the agent
     // This ensures that we don't send beeps from Flex to OpenAI when the call
@@ -129,7 +133,7 @@ export default class AudioInterceptor {
 
   private translateAndForwardCallerAudio(message: MediaBaseAudioMessage) {
     if (this.config.FORWARD_AUDIO_BEFORE_TRANSLATION === 'true') {
-      this.#agentSocket.send([message.media.payload]);
+      this.#agentSocket?.send([message.media.payload]);
     }
     if (!this.#callerOpenAISocket) {
       this.logger.error('Caller OpenAI WebSocket is not available.');
@@ -146,17 +150,17 @@ export default class AudioInterceptor {
    * @private
    */
   private setupOpenAISockets() {
-    const url = 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01';
+    // GA Realtime API - the beta shape (OpenAI-Beta header, preview models)
+    // has been shut down and rejects sessions with beta_api_shape_disabled.
+    const url = 'wss://api.openai.com/v1/realtime?model=gpt-realtime';
     const callerSocket = new WebSocket(url, {
       headers: {
         Authorization: `Bearer ${this.config.OPENAI_API_KEY}`,
-        'OpenAI-Beta': 'realtime=v1'
       },
     });
     const agentSocket = new WebSocket(url, {
       headers: {
         Authorization: `Bearer ${this.config.OPENAI_API_KEY}`,
-        'OpenAI-Beta': 'realtime=v1'
       },
     });
     const callerPrompt = AI_PROMPT_CALLER.replace(
@@ -172,33 +176,36 @@ export default class AudioInterceptor {
     this.#callerOpenAISocket = callerSocket;
     this.#agentOpenAISocket = agentSocket;
 
-    // Configure the Realtime AI Agents with new 'session.update' client event
-    const callerConfigMsg = {
+    // Configure the Realtime AI Agents with the GA 'session.update' shape.
+    // audio/pcmu is G.711 u-law, the format Twilio Media Streams use.
+    const sessionConfig = (instructions: string) => ({
       type: 'session.update',
       session: {
-        modalities: ['text', 'audio'],
-        instructions: callerPrompt,
-        input_audio_format: 'g711_ulaw',
-        output_audio_format: 'g711_ulaw',
-        input_audio_transcription: {model: 'whisper-1'},
-        turn_detection: {type: 'server_vad'},
-        //Setting temperature to minimum allowed value to get deterministic translation results
-        temperature: 0.6
-      }
-    }
-    const agentConfigMsg = {
-      type: 'session.update',
-      session: {
-        modalities: ['text', 'audio'],
-        instructions: agentPrompt,
-        input_audio_format: 'g711_ulaw',
-        output_audio_format: 'g711_ulaw',
-        input_audio_transcription: {model: 'whisper-1'},
-        turn_detection: {type: 'server_vad'},
-        //Setting temperature to minimum allowed value to get deterministic translation results
-        temperature: 0.6
-      }
-    }
+        type: 'realtime',
+        instructions,
+        output_modalities: ['audio'],
+        audio: {
+          input: {
+            format: { type: 'audio/pcmu' },
+            transcription: { model: 'whisper-1' },
+            // Phone audio: filter background noise before speech detection
+            noise_reduction: { type: 'near_field' },
+            // Wait for a full pause so whole sentences are translated at once.
+            // A higher threshold ignores quiet background sounds/echo.
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.6,
+              silence_duration_ms: 500,
+            },
+          },
+          output: {
+            format: { type: 'audio/pcmu' },
+          },
+        },
+      },
+    });
+    const callerConfigMsg = sessionConfig(callerPrompt);
+    const agentConfigMsg = sessionConfig(agentPrompt);
 
     // Event listeners for when the connection is opened
     callerSocket.on('open', () => {
@@ -221,10 +228,10 @@ export default class AudioInterceptor {
     });
 
     // Event listeners for when a message is received from the server
-    callerSocket.on('message', (msg) => {
-      this.logger.info(`Caller message from OpenAI: ${msg}`);
+    callerSocket.on('message', (msg: Buffer) => {
       const currentTime = new Date().getTime();
-      const message = JSON.parse(msg) as OpenAIMessage;
+      const message = JSON.parse(msg.toString()) as OpenAIMessage;
+      this.logOpenAIEvent('caller', message, msg);
       if (message.type === 'input_audio_buffer.speech_stopped') {
         if (!this.#callerMessages) {
           this.#callerMessages = [];
@@ -234,24 +241,20 @@ export default class AudioInterceptor {
           vad_speech_stopped_time: currentTime,
         });
       }
-      if (message.type === 'response.audio.delta') {
+      if (message.type === 'response.output_audio.delta') {
         // Handle an audio message from OpenAI, post translation
-        this.logger.info('Received caller translation from OpenAI');
-        if (
-          !this.#callerMessages[this.#callerMessages.length - 1]
-            .first_audio_buffer_add_time
-        ) {
-          this.#callerMessages[
-            this.#callerMessages.length - 1
-          ].first_audio_buffer_add_time = currentTime;
+        this.logger.debug('Received caller translation from OpenAI');
+        const last = this.#callerMessages?.[this.#callerMessages.length - 1];
+        if (last && !last.first_audio_buffer_add_time) {
+          last.first_audio_buffer_add_time = currentTime;
         }
-        this.#agentSocket.send([message.delta]);
+        this.#agentSocket?.send([message.delta]);
       }
     });
-    agentSocket.on('message', (msg) => {
-      this.logger.info(`Agent message from OpenAI: ${msg.toString()}`);
+    agentSocket.on('message', (msg: Buffer) => {
       const currentTime = new Date().getTime();
-      const message = JSON.parse(msg) as OpenAIMessage;;
+      const message = JSON.parse(msg.toString()) as OpenAIMessage;
+      this.logOpenAIEvent('agent', message, msg);
       if (message.type === 'input_audio_buffer.speech_stopped') {
         if (!this.#agentMessages) {
           this.#agentMessages = [];
@@ -261,18 +264,14 @@ export default class AudioInterceptor {
           vad_speech_stopped_time: currentTime,
         });
       }
-      if (message.type === 'response.audio.delta') {
+      if (message.type === 'response.output_audio.delta') {
         // Handle an audio message from OpenAI, post translation
-        this.logger.info('Received agent translation from OpenAI');
-        if (
-          !this.#agentMessages[this.#agentMessages.length - 1]
-            .first_audio_buffer_add_time
-        ) {
-          this.#agentMessages[
-            this.#agentMessages.length - 1
-          ].first_audio_buffer_add_time = currentTime;
+        this.logger.debug('Received agent translation from OpenAI');
+        const last = this.#agentMessages?.[this.#agentMessages.length - 1];
+        if (last && !last.first_audio_buffer_add_time) {
+          last.first_audio_buffer_add_time = currentTime;
         }
-        this.#callerSocket.send([message.delta]);
+        this.#callerSocket?.send([message.delta]);
       }
     });
 
@@ -294,20 +293,58 @@ export default class AudioInterceptor {
     });
   }
 
-  private reportOnSocketTimeToFirstAudioBufferAdd(messages: BufferedMessage[]) {
-    const filtered = messages.filter(
+  private reportOnSocketTimeToFirstAudioBufferAdd(
+    messages?: BufferedMessage[],
+  ) {
+    const filtered = (messages ?? []).filter(
       (message) => message.first_audio_buffer_add_time,
     );
+    // Nobody spoke on this leg (or got no translation) before the call ended
+    if (filtered.length === 0) {
+      return 0;
+    }
     const totalTime = filtered.reduce(
       (acc, { first_audio_buffer_add_time, vad_speech_stopped_time }) =>
-        acc + (first_audio_buffer_add_time - vad_speech_stopped_time),
+        acc + ((first_audio_buffer_add_time ?? 0) - vad_speech_stopped_time),
       0,
     );
 
     return totalTime / filtered.length;
   }
 
-  private forwardAudioToOpenAIForTranslation(socket: WebSocket, audio: String) {
+  /**
+   * Logs one readable line per spoken/translated sentence and any OpenAI
+   * error; every other event (and the base64 audio) only at debug level.
+   * The caller session turns caller speech into English for the agent, and
+   * the agent session turns agent speech into the caller's language.
+   */
+  private logOpenAIEvent(
+    side: 'caller' | 'agent',
+    message: OpenAIMessage,
+    raw: Buffer,
+  ) {
+    const speaker = side === 'caller' ? 'CALLER' : 'AGENT';
+    const listener = side === 'caller' ? 'AGENT' : 'CALLER';
+    const outLanguage = side === 'caller' ? 'english' : this.callerLanguage;
+
+    if (message.type === 'conversation.item.input_audio_transcription.completed') {
+      this.logger.info(`${speaker} SAID: "${message.transcript}"`);
+    } else if (message.type === 'response.output_audio_transcript.done') {
+      this.logger.info(
+        `${listener} HEARS (${outLanguage}): "${message.transcript}"`,
+      );
+    } else if (message.type === 'error') {
+      this.logger.error(`OpenAI ${side} session error: ${raw.toString()}`);
+    } else if (message.type !== 'response.output_audio.delta') {
+      this.logger.debug(`${side} message from OpenAI: ${raw.toString()}`);
+    }
+  }
+
+  private forwardAudioToOpenAIForTranslation(socket: WebSocket, audio: string) {
+    // The other leg may still stream a few packets after the call is torn down
+    if (this.#closed) {
+      return;
+    }
     this.sendMessageToOpenAI(socket, {
       type: 'input_audio_buffer.append',
       audio: audio,

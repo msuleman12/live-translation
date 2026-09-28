@@ -46,22 +46,18 @@ const interceptWS: FastifyPluginAsyncTypebox = async (server) => {
           );
 
           logger.info('Connecting to Agent');
+          // Answering machine detection: /agent-answered only connects the
+          // stream when a person picks up, never a voicemail.
+          const query = new URLSearchParams({
+            callerCallSid: message.start.callSid,
+            from: customParameters.from,
+          });
           await twilio.calls.create({
             from: server.config.TWILIO_CALLER_NUMBER,
             to: server.config.TWILIO_AGENT_NUMBER,
             callerId: customParameters.from,
-            twiml: `
-              <Response>
-                <Say>A customer is on the line.</Say>
-                <Connect>
-                  <Stream name="Outbound Audio Stream" url="wss://${server.config.NGROK_DOMAIN}/intercept">
-                    <Parameter name="direction" value="outbound"/>
-                    <Parameter name="callSid" value="${message.start.callSid}"/>
-                    <Parameter name="from" value="${customParameters.from}"/>
-                  </Stream>
-                </Connect>
-              </Response>
-            `,
+            machineDetection: 'Enable',
+            url: `https://${server.config.NGROK_DOMAIN}/agent-answered?${query}`,
           });
         }
 
